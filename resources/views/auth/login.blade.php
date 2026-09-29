@@ -13,7 +13,9 @@
     }
     .intro, .panel { padding: 1.7rem 1.8rem 1.8rem; }
     h1 { font-size: clamp(1.7rem, 3vw, 2.35rem); line-height: 1.3; margin: 0.8rem 0 0.7rem; }
-    .lead { font-size: 1.05rem; color: var(--muted); margin: 0 0 1.2rem; }
+    .lead { font-size: 1.05rem; color: var(--muted); margin: 0 0 1rem; }
+    .steps { margin: 0 0 1rem; padding-left: 1.2rem; color: var(--ink); }
+    .steps li { margin: 0.35rem 0; }
     .rules { display: grid; gap: 0.7rem; margin: 0; padding: 0; list-style: none; }
     .rules li {
         display: flex;
@@ -61,9 +63,14 @@
 @section('content')
     <main class="login-grid">
         <section class="card intro">
-            <div class="pill"><x-icon name="help" /> จุดรับแจ้งเมื่อต้องการความช่วยเหลือ</div>
-            <h1>ระบบรับคำขอตรวจสอบและนัดหมายดูภาพจากกล้องวงจรปิด</h1>
+            <div class="pill"><x-icon name="shield" /> รับเรื่องอย่างสุภาพ</div>
+            <h1>เมื่อต้องการให้ช่วยดูภาพ เริ่มจากเล่าเรื่องให้เจ้าหน้าที่ได้ที่นี่</h1>
             <p class="lead">คณะวิทยาศาสตร์ มหาวิทยาลัยขอนแก่น พร้อมรับเรื่องเมื่อทรัพย์สินสูญหาย เกิดอุบัติเหตุ หรือต้องการตรวจสอบเหตุการณ์ ใช้สำหรับยื่นคำขอและนัดหมายดูภาพเท่านั้น ไม่มีการดาวน์โหลดหรือส่งมอบไฟล์ภาพ</p>
+            <ol class="steps">
+                <li>เลือกบัญชีให้ตรงสถานะ นักศึกษาใช้ @kkumail.com บุคลากรใช้ @kku.ac.th บุคคลภายนอกใช้บัญชี Google ที่ติดต่อได้</li>
+                <li>กดปุ่มเข้าสู่ระบบด้วย Google แล้วเลือกอีเมลในหน้าของ Google</li>
+                <li>เมื่อเข้าได้แล้ว กดแจ้งขอความช่วยเหลือเพื่อกรอกคำขอ จากนั้นติดตามสถานะได้จากการ์ดติดตามคำขอ</li>
+            </ol>
             <ul class="rules">
                 <li>
                     <span class="rule-icon"><x-icon name="eye" /></span>

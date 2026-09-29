@@ -31,6 +31,9 @@
             <circle cx="12" cy="8" r="3"/>
             <path d="M5.5 19.5c1.2-3 3.4-4.5 6.5-4.5s5.3 1.5 6.5 4.5"/>
             @break
+        @case('arrow')
+            <path d="M5 12h12M13 7l5 5-5 5"/>
+            @break
         @case('logout')
             <path d="M10 7V5.5A1.5 1.5 0 0 1 11.5 4h7A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 10 18.5V17"/>
             <path d="M4 12h10M11 8.5L14.5 12 11 15.5"/>
@@ -42,6 +45,35 @@
         @case('lock')
             <rect x="5" y="10" width="14" height="10" rx="2"/>
             <path d="M8 10V8a4 4 0 0 1 8 0v2"/>
+            @break
+        @case('home')
+            <path d="M4 10.5L12 4l8 6.5"/>
+            <path d="M7 10.2V19h10v-8.8"/>
+            @break
+        @case('camera')
+            <path d="M4 8.5h3l1.2-2h7.6L17 8.5h3v9H4z"/>
+            <circle cx="12" cy="13" r="2.4"/>
+            @break
+        @case('chart')
+            <path d="M4 19V5M4 19h16"/>
+            <path d="M8 15v-4M12 15V8M16 15v-6"/>
+            @break
+        @case('users')
+            <circle cx="9" cy="9" r="2.4"/>
+            <circle cx="16" cy="10" r="2"/>
+            <path d="M4.8 18c.7-2.2 2.3-3.3 4.2-3.3s3.5 1.1 4.2 3.3M14 14.8c1.3-.3 2.5.1 3.4 1.2.6.7 1 1.4 1.2 2"/>
+            @break
+        @case('route')
+            <circle cx="6" cy="7" r="2"/>
+            <circle cx="17" cy="17" r="2"/>
+            <path d="M8 8c4 0 3 8 7 8"/>
+            @break
+        @case('document')
+            <path d="M7 3.5h7l4 4V20.5H7z"/>
+            <path d="M14 3.5V8h4M9.5 12h5M9.5 16h5"/>
+            @break
+        @case('scale')
+            <path d="M12 4v15M8 19h8M12 6l-5 6h4M12 6l5 6h-4"/>
             @break
         @default
             <circle cx="12" cy="12" r="9"/>

@@ -28,8 +28,8 @@
         gap: 0.35rem;
         border-radius: 999px;
         padding: 0.32rem 0.75rem;
-        background: var(--rose);
-        color: var(--help-deep);
+        background: var(--info-bg);
+        color: var(--help);
         font-weight: 700;
     }
     .chip .icon { width: 1rem; height: 1rem; }
@@ -39,7 +39,22 @@
         gap: 0.9rem;
         margin-bottom: 1rem;
     }
-    .section { padding: 1.15rem 1.15rem 1.25rem; }
+    .section {
+        display: block;
+        padding: 1.15rem 1.15rem 1.25rem;
+        color: inherit;
+        text-decoration: none;
+        transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .section:hover { transform: translateY(-2px); border-color: var(--help); }
+    .open {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        margin-top: 0.8rem;
+        color: var(--help);
+        font-weight: 700;
+    }
     .section-icon {
         width: 2.6rem;
         height: 2.6rem;
@@ -91,17 +106,19 @@
     </section>
 
     <section class="sections">
-        <article class="card section">
+        <a class="card section" href="{{ route('requests.create') }}">
             <div class="section-icon"><x-icon name="help" /></div>
-            <h2>แจ้งขอความช่วยเหลือ</h2>
-            <p>ยื่นคำขอเมื่อทรัพย์สินสูญหาย เกิดอุบัติเหตุ หรือต้องการให้เจ้าหน้าที่ตรวจสอบเหตุการณ์</p>
-        </article>
-        <article class="card section">
+            <h2>แจ้งเรื่องที่ต้องการให้ช่วยดู</h2>
+            <p>เล่าเหตุการณ์เป็นขั้นสั้น ๆ เจ้าหน้าที่จะรับเรื่องและติดต่อกลับบนหน้าติดตามสถานะ</p>
+            <span class="open">เริ่มยื่นคำขอ <x-icon name="arrow" /></span>
+        </a>
+        <a class="card section" href="{{ route('appointments.index') }}">
             <div class="section-icon"><x-icon name="calendar" /></div>
             <h2>นัดหมายดูภาพ</h2>
             <p>หากได้รับอนุญาต จะดูภาพภายใต้การควบคุมของเจ้าหน้าที่ ตามวัน เวลา และสถานที่ที่กำหนด</p>
-        </article>
-        <article class="card section">
+            <span class="open">ดูสถานะนัดหมาย <x-icon name="arrow" /></span>
+        </a>
+        <a class="card section" href="{{ route('requests.index') }}">
             <div class="section-icon"><x-icon name="clipboard" /></div>
             <h2>ติดตามคำขอ</h2>
             <p>
@@ -111,11 +128,59 @@
                     ติดตามสถานะคำขอที่อยู่ในความรับผิดชอบ
                 @endif
             </p>
-        </article>
+            <span class="open">ดูคำขอของฉัน <x-icon name="arrow" /></span>
+        </a>
     </section>
+
+    @php
+        $role = auth()->user()->role;
+        $work = match ($role) {
+            \App\Enums\UserRole::CctvAdmin => [
+                ['queue', 'clipboard', 'คิวเจ้าหน้าที่', 'ตรวจคำขอ บันทึกผลกล้อง และนัดดูภาพภายใต้การควบคุม'],
+                ['cameras.index', 'camera', 'ทะเบียนกล้อง', 'ตรวจเช็กรายเดือน งานซ่อม และจุดที่ยังไม่มีกล้อง'],
+            ],
+            \App\Enums\UserRole::Director, \App\Enums\UserRole::AssociateDean => [
+                ['reviews', 'scale', 'พิจารณาคำขอ', 'เห็นชอบ ขอข้อมูลเพิ่ม หรือส่งต่อกรณีสำคัญ'],
+                ['reports.index', 'chart', 'รายงาน', 'ดูสถิติและส่งออกโดยซ่อนข้อมูลส่วนบุคคล'],
+            ],
+            \App\Enums\UserRole::PdpaCoordinator => [
+                ['pdpa.inbox', 'shield', 'ความเห็นข้อมูลส่วนบุคคล', 'ให้ความเห็นคำขอที่มีความเสี่ยงด้านสิทธิสูง'],
+                ['privacy.edit', 'document', 'ประกาศความเป็นส่วนตัว', 'ตรวจและเผยแพร่รุ่นใหม่ของประกาศ'],
+            ],
+            \App\Enums\UserRole::SuperAdmin => [
+                ['admin.users', 'users', 'กำหนดสิทธิ์', 'กำหนดบทบาทและเจ้าหน้าที่สำรองตามช่วงเวลา'],
+                ['admin.rules', 'route', 'เส้นทางคำขอ', 'ปรับว่าคำขอประเภทใดต้องผ่านผู้ใด'],
+                ['admin.audit', 'document', 'บันทึกการใช้งาน', 'ตรวจย้อนหลังแบบอ่านอย่างเดียว'],
+                ['reports.index', 'chart', 'รายงาน', 'ดูภาพรวมและจุดบกพร่องเพื่อประกอบคำของบประมาณ'],
+            ],
+            default => [],
+        };
+    @endphp
+    @if ($work !== [])
+        <section class="sections">
+            @foreach ($work as [$routeName, $icon, $heading, $text])
+                <a class="card section" href="{{ route($routeName) }}">
+                    <div class="section-icon"><x-icon :name="$icon" /></div>
+                    <h2>{{ $heading }}</h2>
+                    <p>{{ $text }}</p>
+                    <span class="open">เปิดงาน <x-icon name="arrow" /></span>
+                </a>
+            @endforeach
+        </section>
+    @endif
+    @if (auth()->user()->isActiveBackup())
+        <section class="sections">
+            <a class="card section" href="{{ route('queue') }}">
+                <div class="section-icon"><x-icon name="shield" /></div>
+                <h2>คิวในฐานะเจ้าหน้าที่สำรอง</h2>
+                <p>ช่วงนี้ท่านได้รับมอบหมายให้ทำหน้าที่แทนเจ้าหน้าที่หลัก</p>
+                <span class="open">เปิดคิว <x-icon name="arrow" /></span>
+            </a>
+        </section>
+    @endif
 
     <div class="notice">
         <x-icon name="lock" />
-        <span>ใช้สำหรับยื่นคำขอตรวจสอบหรือนัดหมายดูภาพภายใต้การควบคุมของเจ้าหน้าที่ ระบบไม่ได้เปิดไฟล์ภาพหรือวิดีโอจากกล้องวงจรปิด และไม่มีการดาวน์โหลดหรือส่งมอบไฟล์ภาพ</span>
+        <span>ใช้สำหรับยื่นคำขอและนัดหมายดูภาพภายใต้การควบคุมของเจ้าหน้าที่ ไม่มีการดาวน์โหลดหรือส่งมอบไฟล์ภาพ</span>
     </div>
 @endsection

@@ -36,7 +36,16 @@ class GoogleLoginTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertSee('staff@kku.ac.th')
-            ->assertSee('บุคลากร มข.');
+            ->assertSee('บุคลากร มข.')
+            ->assertSee(route('requests.create'), false)
+            ->assertSee(route('appointments.index'), false)
+            ->assertSee(route('requests.index'), false);
+    }
+
+    public function test_request_pages_require_login(): void
+    {
+        $this->get(route('requests.create'))->assertRedirect(route('login'));
+        $this->get(route('requests.index'))->assertRedirect(route('login'));
     }
 
     public function test_callback_rejects_an_account_without_a_valid_email(): void
