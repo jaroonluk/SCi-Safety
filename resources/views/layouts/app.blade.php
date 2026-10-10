@@ -95,13 +95,70 @@
         .btn-solid:hover, .btn-google:hover { background: var(--help-deep); }
         .btn-accent { background: var(--accent); color: white; }
         .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: #065f46; }
         .btn-warn { background: var(--warn); color: #1c1917; }
+        .btn-warn:hover { background: #92400e; color: #fff; }
+        .btn-danger { background: #be123c; color: white; }
+        .btn-danger:hover { background: #9f1239; }
+        .btn-info { background: #2563eb; color: white; }
+        .btn-info:hover { background: #1d4ed8; }
+        .btn-teal { background: #0d9488; color: white; }
+        .btn-teal:hover { background: #0f766e; }
+        .btn-slate { background: #475569; color: white; }
+        .btn-slate:hover { background: #334155; }
         .btn-quiet {
             background: white;
             color: var(--help);
             border: 1px solid var(--line);
         }
         .btn-quiet:hover { border-color: var(--accent); color: var(--accent); }
+        .btn.is-picked { box-shadow: 0 0 0 3px rgba(253, 164, 175, 0.55); }
+        .impersonation-banner {
+            background: #7c2d12;
+            color: #fff7ed;
+            border-bottom: 1px solid #9a3412;
+        }
+        .impersonation-banner .shell {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.75rem 0;
+        }
+        .impersonation-banner strong { color: #ffedd5; }
+        .impersonation-banner .btn {
+            background: #fff7ed;
+            color: #7c2d12;
+            padding: 0.45rem 0.85rem;
+            font-size: 0.95rem;
+        }
+        .impersonation-banner .btn:hover { background: #ffedd5; }
+        .impersonation-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.65rem;
+        }
+        .impersonation-switch {
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+        .impersonation-switch label {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 0.92rem;
+        }
+        .impersonation-switch select {
+            border: 0;
+            border-radius: 8px;
+            padding: 0.4rem 0.55rem;
+            font: inherit;
+            background: #fff7ed;
+            color: #7c2d12;
+        }
         .alert {
             display: flex;
             gap: 0.55rem;
@@ -321,7 +378,8 @@
             cursor: pointer;
         }
         .choice.is-on { border-color: var(--accent); background: var(--info-bg); color: var(--help); font-weight: 600; }
-        .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; align-items: start; }
+        .kanban { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.75rem; align-items: start; }
+        @media (max-width: 1100px) { .kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         .lane { background: #f8efec; border-radius: var(--radius); padding: 0.75rem; }
         .lane h2 { margin: 0 0 0.7rem; font-size: 1rem; }
         .mini { display: block; padding: 0.85rem; margin-bottom: 0.55rem; text-decoration: none; color: inherit; }
@@ -342,6 +400,51 @@
     @stack('styles')
 </head>
 <body>
+    @auth
+        @if (\App\Support\Impersonation::active())
+            @php
+                $impersonator = \App\Support\Impersonation::impersonator();
+                $rolePreview = \App\Support\Impersonation::isRolePreview();
+            @endphp
+            <div class="impersonation-banner" role="status">
+                <div class="shell">
+                    <span>
+                        @if ($rolePreview)
+                            โหมดทดสอบสิทธิ์:
+                            <strong>{{ auth()->user()->role->label() }}</strong>
+                            — บัญชีจริงยังเป็นผู้ดูแลระบบสูงสุด
+                        @else
+                            โหมดทดสอบ: กำลังเข้าใช้งานแทน
+                            <strong>{{ auth()->user()->name }}</strong>
+                            ({{ auth()->user()->role->label() }})
+                            @if ($impersonator)
+                                — ผู้ดูแลเดิม: {{ $impersonator->name }}
+                            @endif
+                        @endif
+                    </span>
+                    <div class="impersonation-actions">
+                        @if ($rolePreview)
+                            <form method="POST" action="{{ route('admin.impersonate.role') }}" class="impersonation-switch">
+                                @csrf
+                                <label>
+                                    สลับสิทธิ์
+                                    <select name="role" onchange="this.form.submit()">
+                                        @foreach (\App\Enums\UserRole::cases() as $role)
+                                            <option value="{{ $role->value }}" @selected(auth()->user()->role === $role)>{{ $role->label() }}</option>
+                                        @endforeach
+                                    </select>
+                                </label>
+                            </form>
+                        @endif
+                        <form method="POST" action="{{ route('admin.impersonate.leave') }}">
+                            @csrf
+                            <button class="btn" type="submit">กลับสู่บัญชีผู้ดูแล</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endif
+    @endauth
     <header class="site-header">
         <div class="shell header-inner">
             <a class="brand" href="{{ route('home') }}">

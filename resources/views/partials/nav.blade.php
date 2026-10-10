@@ -15,37 +15,31 @@
             $link('cameras.index', 'camera', 'ทะเบียนกล้อง', 'จุดติดตั้งและสถานะกล้อง', ['cameras.index'], 'งานระบบ'),
             $link('reports.index', 'chart', 'รายงาน', 'สถิติและจุดบกพร่องสำหรับที่ประชุม', ['reports.index'], 'งานระบบ'),
             $link('privacy.edit', 'shield', 'ประกาศความเป็นส่วนตัว', 'ตรวจและเผยแพร่รุ่นใหม่', ['privacy.edit'], 'งานระบบ'),
-            $link('requests.create', 'help', 'แจ้งเรื่อง', 'ยื่นคำขอใหม่', ['requests.create']),
-            $link('requests.index', 'clipboard', 'คำขอของฉัน', 'ติดตามเรื่องที่บัญชียื่นเอง', ['requests.index', 'requests.show']),
-            $link('appointments.index', 'calendar', 'นัดหมาย', 'วันเวลาดูภาพภายใต้การควบคุม', ['appointments.index']),
+            $link('requests.create', 'help', 'แจ้งเรื่องดูภาพ', 'ยื่นคำขอใหม่', ['requests.create']),
+            $link('requests.index', 'clipboard', 'ติดตามคำขอ', 'สถานะคำขอและนัดดูภาพ', ['requests.index', 'requests.show', 'appointments.index']),
         ];
     } elseif ($user->hasRole(\App\Enums\UserRole::Director, \App\Enums\UserRole::AssociateDean)) {
         $primary[] = $link('reviews', 'scale', 'พิจารณา', '', ['reviews']);
         $more = [
             $link('reports.index', 'chart', 'รายงาน', 'สถิติและจุดบกพร่องสำหรับที่ประชุม', ['reports.index'], 'งานพิจารณา'),
-            $link('requests.create', 'help', 'แจ้งเรื่อง', 'ยื่นคำขอใหม่', ['requests.create']),
-            $link('requests.index', 'clipboard', 'คำขอของฉัน', 'ติดตามเรื่องที่บัญชียื่นเอง', ['requests.index', 'requests.show']),
-            $link('appointments.index', 'calendar', 'นัดหมาย', 'วันเวลาดูภาพภายใต้การควบคุม', ['appointments.index']),
+            $link('requests.create', 'help', 'แจ้งเรื่องดูภาพ', 'ยื่นคำขอใหม่', ['requests.create']),
+            $link('requests.index', 'clipboard', 'ติดตามคำขอ', 'สถานะคำขอและนัดดูภาพ', ['requests.index', 'requests.show', 'appointments.index']),
         ];
     } elseif ($user->role === \App\Enums\UserRole::PdpaCoordinator) {
-        $primary[] = $link('pdpa.inbox', 'shield', 'ความเห็นข้อมูลส่วนบุคคล', '', ['pdpa.inbox']);
+        $primary[] = $link('privacy.edit', 'document', 'ประกาศความเป็นส่วนตัว', '', ['privacy.edit']);
         $more = [
-            $link('privacy.edit', 'document', 'ประกาศความเป็นส่วนตัว', 'ตรวจและเผยแพร่รุ่นใหม่', ['privacy.edit'], 'งานข้อมูลส่วนบุคคล'),
-            $link('requests.create', 'help', 'แจ้งเรื่อง', 'ยื่นคำขอใหม่', ['requests.create']),
-            $link('requests.index', 'clipboard', 'คำขอของฉัน', 'ติดตามเรื่องที่บัญชียื่นเอง', ['requests.index', 'requests.show']),
-            $link('appointments.index', 'calendar', 'นัดหมาย', 'วันเวลาดูภาพภายใต้การควบคุม', ['appointments.index']),
+            $link('requests.create', 'help', 'แจ้งเรื่องดูภาพ', 'ยื่นคำขอใหม่', ['requests.create']),
+            $link('requests.index', 'clipboard', 'ติดตามคำขอ', 'สถานะคำขอและนัดดูภาพ', ['requests.index', 'requests.show', 'appointments.index']),
         ];
     } elseif ($user->hasRole(\App\Enums\UserRole::CctvAdmin)) {
-        $primary[] = $link('queue', 'clipboard', 'คิวงาน', '', ['queue']);
+        $primary[] = $link('queue', 'clipboard', 'ตรวจสอบคำขอ', '', ['queue']);
         $showCreate = true;
         $more = [
             $link('cameras.index', 'camera', 'ทะเบียนกล้อง', 'ตรวจประจำเดือน งานซ่อม และจุดเสี่ยง', ['cameras.index'], 'งานกล้อง'),
-            $link('requests.index', 'clipboard', 'คำขอของฉัน', 'ติดตามเรื่องที่บัญชียื่นเอง', ['requests.index', 'requests.show']),
-            $link('appointments.index', 'calendar', 'นัดหมาย', 'วันเวลาดูภาพภายใต้การควบคุม', ['appointments.index']),
+            $link('requests.index', 'clipboard', 'ติดตามคำขอ', 'สถานะคำขอและนัดดูภาพ', ['requests.index', 'requests.show', 'appointments.index']),
         ];
     } else {
-        $primary[] = $link('requests.index', 'clipboard', 'คำขอของฉัน', '', ['requests.index', 'requests.show']);
-        $primary[] = $link('appointments.index', 'calendar', 'นัดหมาย', '', ['appointments.index']);
+        $primary[] = $link('requests.index', 'clipboard', 'ติดตามคำขอ', '', ['requests.index', 'requests.show', 'appointments.index']);
         $showCreate = true;
     }
 
@@ -65,7 +59,7 @@
         </ul>
     </nav>
     @if ($showCreate)
-        <a class="btn btn-solid" href="{{ route('requests.create') }}" @if (request()->routeIs('requests.create')) aria-current="page" @endif><x-icon name="help" /> แจ้งเรื่อง</a>
+        <a class="btn btn-solid" href="{{ route('requests.create') }}" @if (request()->routeIs('requests.create')) aria-current="page" @endif><x-icon name="help" /> แจ้งเรื่องดูภาพ</a>
     @endif
     @if ($more !== [])
         <details class="more" @if ($moreActive) open @endif>

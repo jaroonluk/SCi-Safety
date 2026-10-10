@@ -47,6 +47,12 @@ class ViewingRequest extends Model
         'recorded_by_id',
         'technical_result',
         'technical_note',
+        'director_note',
+        'dean_note',
+        'officer_decision',
+        'officer_reviewed_by_id',
+        'director_reviewed_by_id',
+        'dean_reviewed_by_id',
         'high_risk',
         'pdpa_opinion',
         'workflow_after_pdpa',
@@ -105,6 +111,21 @@ class ViewingRequest extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function officerReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'officer_reviewed_by_id');
+    }
+
+    public function directorReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'director_reviewed_by_id');
+    }
+
+    public function deanReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'dean_reviewed_by_id');
+    }
+
     public function statusLabel(): string
     {
         return $this->status->label();
@@ -116,53 +137,124 @@ class ViewingRequest extends Model
     }
 
     /**
-     * @return array{steps: list<array{label: string, state: string}>, next: string, tone: string}
+     * @return array{
+     *     steps: list<array{number: int, label: string, hint: string, icon: string, state: string}>,
+     *     current: int,
+     *     total: int,
+     *     next: string,
+     *     tone: string,
+     *     finished: bool,
+     *     stopped: bool
+     * }
      */
     public function journey(): array
     {
-        $labels = ['ยื่นคำขอ', 'รับเรื่อง', 'ตรวจสอบกล้อง', 'ผลการพิจารณา', 'นัดหมายดูภาพ'];
+        $definitions = [
+            [
+                'label' => 'ยื่นคำขอ',
+                'hint' => 'ท่านส่งคำขอเข้าระบบแล้ว',
+                'icon' => 'document',
+            ],
+            [
+                'label' => 'เจ้าหน้าที่ตรวจ',
+                'hint' => 'ตรวจกล้องและเห็นชอบคำขอ',
+                'icon' => 'camera',
+            ],
+            [
+                'label' => 'ผู้บริหารพิจารณา',
+                'hint' => 'ผู้อำนวยการกอง หรือรองคณบดี',
+                'icon' => 'scale',
+            ],
+            [
+                'label' => 'นัดหมายดูภาพ',
+                'hint' => 'กำหนดวันเวลาและห้องควบคุม',
+                'icon' => 'calendar',
+            ],
+            [
+                'label' => 'ดูภาพและปิดเรื่อง',
+                'hint' => 'ดูภาพต่อหน้าเจ้าหน้าที่ แล้วปิดคำขอ',
+                'icon' => 'eye',
+            ],
+        ];
+
         $current = match ($this->status) {
             RequestStatus::Submitted, RequestStatus::MoreInfo => 1,
-            RequestStatus::NoFootage => 2,
-            RequestStatus::PendingDirector, RequestStatus::PendingDean, RequestStatus::PendingPdpa, RequestStatus::Rejected => 3,
-            RequestStatus::Approved, RequestStatus::Scheduled, RequestStatus::Viewed, RequestStatus::Closed => 4,
+            RequestStatus::NoFootage => 1,
+            RequestStatus::PendingDirector, RequestStatus::PendingDean => 2,
+            RequestStatus::Rejected => ($this->officer_decision === 'reject') ? 1 : 2,
+            RequestStatus::Approved, RequestStatus::Scheduled => 3,
+            RequestStatus::Viewed => 4,
+            RequestStatus::Closed => 4,
+            default => 1,
         };
-        $finished = in_array($this->status, [RequestStatus::Viewed, RequestStatus::Closed], true);
-        $stopped = in_array($this->status, [RequestStatus::Rejected, RequestStatus::NoFootage], true);
-        $steps = [];
 
-        foreach ($labels as $index => $label) {
-            $state = 'wait';
-            if ($finished || $index < $current) {
+        $finished = $this->status === RequestStatus::Closed;
+        $stopped = in_array($this->status, [RequestStatus::Rejected, RequestStatus::NoFootage], true);
+        $nearEnd = $this->status === RequestStatus::Viewed;
+
+        if ($this->status === RequestStatus::PendingDean) {
+            $definitions[2]['hint'] = 'อยู่ที่รองคณบดีฝ่ายบริหารพิจารณา';
+        } elseif ($this->status === RequestStatus::PendingDirector) {
+            $definitions[2]['hint'] = 'อยู่ที่ผู้อำนวยการกองพิจารณา';
+        } elseif ($this->status === RequestStatus::MoreInfo) {
+            $definitions[1]['hint'] = 'เจ้าหน้าที่ขอข้อมูลเพิ่มจากท่าน';
+        } elseif ($this->status === RequestStatus::Approved) {
+            $definitions[3]['hint'] = 'อนุมัติแล้ว รอเจ้าหน้าที่เปิดนัด';
+        } elseif ($this->status === RequestStatus::Scheduled) {
+            $definitions[3]['hint'] = $this->appointment_confirmed_at
+                ? 'ยืนยันนัดแล้ว รอวันดูภาพ'
+                : 'มีนัดแล้ว กรุณายืนยันด้านล่าง';
+        }
+
+        $steps = [];
+        foreach ($definitions as $index => $definition) {
+            if ($finished || ($nearEnd && $index < 4) || $index < $current) {
                 $state = 'done';
-            } elseif ($index === $current && ! $stopped) {
-                $state = 'current';
+            } elseif ($stopped && $index === $current) {
+                $state = 'stopped';
             } elseif ($index === $current) {
                 $state = 'current';
+            } else {
+                $state = 'wait';
             }
-            $steps[] = ['label' => $label, 'state' => $state];
+
+            if ($finished) {
+                $state = 'done';
+            }
+
+            $steps[] = [
+                'number' => $index + 1,
+                'label' => $definition['label'],
+                'hint' => $definition['hint'],
+                'icon' => $definition['icon'],
+                'state' => $state,
+            ];
         }
 
         $next = match ($this->status) {
-            RequestStatus::Submitted => 'เจ้าหน้าที่จะเริ่มตรวจสอบข้อมูลภายใน 24 ชั่วโมงทำการ จากนั้นหน้านี้จะบอกขั้นถัดไปให้ท่าน',
-            RequestStatus::MoreInfo => 'เจ้าหน้าที่ต้องการข้อมูลเพิ่มเล็กน้อย กรอกรายละเอียดด้านล่างแล้วส่งกลับได้เลย',
-            RequestStatus::PendingDirector => 'เรื่องนี้อยู่ที่ผู้อำนวยการกองบริหารงานคณะเพื่อพิจารณาการนัดดูภาพ',
-            RequestStatus::PendingDean => 'เรื่องนี้อยู่ที่รองคณบดีฝ่ายบริหารเพื่อพิจารณา',
-            RequestStatus::PendingPdpa => 'เจ้าหน้าที่คุ้มครองข้อมูลส่วนบุคคลกำลังตรวจว่าการดูภาพกระทบสิทธิใครหรือไม่',
-            RequestStatus::Approved => 'ท่านได้รับอนุญาตให้นัดดูภาพแล้ว เจ้าหน้าที่จะกำหนดวัน เวลา และห้องควบคุมบนหน้านี้',
+            RequestStatus::Submitted => 'ขั้นตอนที่ 2 จาก 5 · เจ้าหน้าที่กำลังตรวจสอบคำขอและกล้อง',
+            RequestStatus::MoreInfo => 'ขั้นตอนที่ 2 จาก 5 · กรุณาส่งข้อมูลเพิ่มด้านล่างเพื่อให้เจ้าหน้าที่ตรวจต่อ',
+            RequestStatus::PendingDirector => 'ขั้นตอนที่ 3 จาก 5 · อยู่ที่ผู้อำนวยการกองพิจารณา',
+            RequestStatus::PendingDean => 'ขั้นตอนที่ 3 จาก 5 · อยู่ที่รองคณบดีฝ่ายบริหารพิจารณา',
+            RequestStatus::Approved => 'ขั้นตอนที่ 4 จาก 5 · อนุมัติแล้ว รอเจ้าหน้าที่กำหนดวันนัดดูภาพ',
             RequestStatus::Scheduled => $this->appointment_confirmed_at
-                ? 'ยืนยันนัดแล้ว โปรดมาตามวันเวลาด้านล่าง การดูภาพทำต่อหน้าเจ้าหน้าที่'
-                : 'มีนัดหมายแล้ว โปรดกดยืนยันด้านล่างเพื่อให้เจ้าหน้าที่เตรียมห้องควบคุม',
-            RequestStatus::Viewed => 'การดูภาพเสร็จแล้ว เจ้าหน้าที่จะปิดเรื่องหลังจากบันทึกผล',
-            RequestStatus::Closed => 'เรื่องนี้ปิดเรียบร้อย หากยังต้องการความช่วยเหลือ สามารถยื่นคำขอใหม่ได้',
-            RequestStatus::Rejected => 'ครั้งนี้ยังไม่สามารถนัดดูภาพได้ อ่านเหตุผลในบันทึกด้านล่างได้',
-            RequestStatus::NoFootage => 'ช่วงเวลาและจุดนี้ยังไม่มีภาพที่ใช้ได้ เจ้าหน้าที่บันทึกไว้เพื่อปรับปรุงพื้นที่',
+                ? 'ขั้นตอนที่ 4 จาก 5 · ยืนยันนัดแล้ว โปรดมาตามวันเวลาที่กำหนด'
+                : 'ขั้นตอนที่ 4 จาก 5 · มีนัดแล้ว กรุณากดยืนยันด้านล่าง',
+            RequestStatus::Viewed => 'ขั้นตอนที่ 5 จาก 5 · ดูภาพเสร็จแล้ว รอเจ้าหน้าที่ปิดคำขอ',
+            RequestStatus::Closed => 'ครบทั้ง 5 ขั้นตอนแล้ว · เรื่องนี้ปิดเรียบร้อย',
+            RequestStatus::Rejected => 'หยุดที่ขั้นตอนพิจารณา · คำขอไม่ได้รับความเห็นชอบ อ่านเหตุผลด้านล่างได้',
+            RequestStatus::NoFootage => 'หยุดที่ขั้นตอนตรวจกล้อง · ช่วงนี้ยังไม่มีภาพที่ใช้ได้',
+            default => 'เจ้าหน้าที่และผู้บริหารกำลังดำเนินการตามลำดับขั้นตอน',
         };
 
         return [
             'steps' => $steps,
+            'current' => $finished ? 5 : ($stopped ? $current + 1 : $current + 1),
+            'total' => 5,
             'next' => $next,
             'tone' => $this->status->tone(),
+            'finished' => $finished,
+            'stopped' => $stopped,
         ];
     }
 }

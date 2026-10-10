@@ -5,34 +5,25 @@ namespace App\Services;
 use App\Enums\RequestStatus;
 use App\Enums\TechnicalResult;
 use App\Models\ViewingRequest;
-use App\Models\WorkflowRule;
 
 class RequestWorkflow
 {
-    public function destinationAfterReview(ViewingRequest $request, bool $highRisk): RequestStatus
+    /**
+     * After the responsible officer endorses a request, always send it to the
+     * division director — never auto-approve for scheduling.
+     */
+    public function destinationAfterReview(ViewingRequest $request, bool $highRisk = false): RequestStatus
     {
         if ($request->technical_result?->lacksFootage()) {
             return RequestStatus::NoFootage;
         }
 
-        if ($highRisk) {
-            return RequestStatus::PendingPdpa;
-        }
-
-        return $this->approvalDestination($request);
+        return RequestStatus::PendingDirector;
     }
 
     public function approvalDestination(ViewingRequest $request): RequestStatus
     {
-        $approver = WorkflowRule::query()
-            ->where('incident_type', $request->incident_type->value)
-            ->value('approver') ?? 'admin';
-
-        return match ($approver) {
-            'director' => RequestStatus::PendingDirector,
-            'dean' => RequestStatus::PendingDean,
-            default => RequestStatus::Approved,
-        };
+        return RequestStatus::PendingDirector;
     }
 
     public function lacksFootage(TechnicalResult $result): bool

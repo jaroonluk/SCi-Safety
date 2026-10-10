@@ -29,7 +29,6 @@ class WorkflowController extends Controller
         $status = match (auth()->user()->role) {
             UserRole::Director => RequestStatus::PendingDirector,
             UserRole::AssociateDean => RequestStatus::PendingDean,
-            UserRole::PdpaCoordinator => RequestStatus::PendingPdpa,
             default => RequestStatus::Submitted,
         };
 
@@ -39,27 +38,84 @@ class WorkflowController extends Controller
         ]);
     }
 
-    public function queue(): View
+    public function queue(Request $request): View
     {
-        $requests = ViewingRequest::query()
-            ->whereIn('status', [
+        $filter = $request->string('filter')->toString() ?: 'all';
+        $search = trim($request->string('q')->toString());
+        $perPage = (int) $request->input('per_page', 20);
+        if (! in_array($perPage, [10, 20, 50, 100], true)) {
+            $perPage = 20;
+        }
+
+        $base = ViewingRequest::query()->latest();
+
+        $counts = [
+            'all' => (clone $base)->count(),
+            'new' => (clone $base)->where('status', RequestStatus::Submitted)->count(),
+            'mine' => (clone $base)->whereIn('status', [
                 RequestStatus::Submitted,
                 RequestStatus::MoreInfo,
                 RequestStatus::Approved,
                 RequestStatus::Scheduled,
                 RequestStatus::Viewed,
-                RequestStatus::NoFootage,
                 RequestStatus::Rejected,
-                RequestStatus::Closed,
-            ])
-            ->latest()
-            ->get();
+                RequestStatus::NoFootage,
+            ])->count(),
+            'director' => (clone $base)->where('status', RequestStatus::PendingDirector)->count(),
+            'dean' => (clone $base)->where('status', RequestStatus::PendingDean)->count(),
+            'urgent' => (clone $base)->where('urgency', 'urgent')
+                ->whereNotIn('status', [RequestStatus::Closed])->count(),
+            'close' => (clone $base)->whereIn('status', [
+                RequestStatus::Viewed,
+                RequestStatus::Rejected,
+                RequestStatus::NoFootage,
+            ])->count(),
+            'closed' => (clone $base)->where('status', RequestStatus::Closed)->count(),
+        ];
+
+        $query = ViewingRequest::query()->latest();
+
+        $query = match ($filter) {
+            'new' => $query->where('status', RequestStatus::Submitted),
+            'mine' => $query->whereIn('status', [
+                RequestStatus::Submitted,
+                RequestStatus::MoreInfo,
+                RequestStatus::Approved,
+                RequestStatus::Scheduled,
+                RequestStatus::Viewed,
+                RequestStatus::Rejected,
+                RequestStatus::NoFootage,
+            ]),
+            'director' => $query->where('status', RequestStatus::PendingDirector),
+            'dean' => $query->where('status', RequestStatus::PendingDean),
+            'urgent' => $query->where('urgency', 'urgent')->whereNotIn('status', [RequestStatus::Closed]),
+            'close' => $query->whereIn('status', [
+                RequestStatus::Viewed,
+                RequestStatus::Rejected,
+                RequestStatus::NoFootage,
+            ]),
+            'closed' => $query->where('status', RequestStatus::Closed),
+            default => $query,
+        };
+
+        if ($search !== '') {
+            $query->where(function ($builder) use ($search) {
+                $builder->where('reference', 'like', '%'.$search.'%')
+                    ->orWhere('building', 'like', '%'.$search.'%')
+                    ->orWhere('location', 'like', '%'.$search.'%')
+                    ->orWhere('purpose', 'like', '%'.$search.'%');
+            });
+        }
 
         $period = now()->format('Y-m');
 
         return view('workflow.queue', [
-            'title' => 'คิวเจ้าหน้าที่',
-            'requests' => $requests,
+            'title' => 'ตรวจสอบคำขอ',
+            'requests' => $query->paginate($perPage)->withQueryString(),
+            'filter' => $filter,
+            'search' => $search,
+            'perPage' => $perPage,
+            'counts' => $counts,
             'inspectionTotal' => Camera::query()->count(),
             'inspectionDone' => CameraInspection::query()->where('period', $period)->whereNotNull('result')->count(),
             'inspectionPeriod' => now()->format('m/Y'),
@@ -74,10 +130,14 @@ class WorkflowController extends Controller
         $data = $request->validate([
             'technical_result' => ['required', Rule::enum(TechnicalResult::class)],
             'technical_note' => ['required', 'string', 'max:2000'],
-            'high_risk' => ['nullable', 'boolean'],
-            'send_to_dean' => ['nullable', 'boolean'],
+            'decision' => ['required', Rule::in(['approve', 'reject'])],
+            'reject_reason' => ['nullable', 'string', 'max:2000'],
             'gap_priority' => ['nullable', Rule::in(['low', 'medium', 'high'])],
         ]);
+
+        if ($data['decision'] === 'reject') {
+            $request->validate(['reject_reason' => ['required', 'string', 'max:2000']]);
+        }
 
         $result = TechnicalResult::from($data['technical_result']);
         if ($result->lacksFootage()) {
@@ -85,26 +145,32 @@ class WorkflowController extends Controller
         }
 
         DB::transaction(function () use ($request, $record, $data, $result) {
-            $highRisk = $request->boolean('high_risk');
-            $sendToDean = $request->boolean('send_to_dean');
-            $record->fill(['technical_result' => $result]);
-            $next = $this->workflow->destinationAfterReview($record, $highRisk);
-            $afterPdpa = null;
-            if ($next === RequestStatus::PendingPdpa) {
-                $afterPdpa = $sendToDean
-                    ? RequestStatus::PendingDean->value
-                    : $this->workflow->approvalDestination($record)->value;
-            } elseif ($sendToDean && $next !== RequestStatus::NoFootage) {
-                $next = RequestStatus::PendingDean;
-            }
+            $decision = $data['decision'];
 
-            $record->fill([
-                'technical_result' => $result,
-                'technical_note' => $data['technical_note'],
-                'high_risk' => $highRisk,
-                'workflow_after_pdpa' => $afterPdpa,
-                'status' => $next,
-            ])->save();
+            if ($decision === 'reject') {
+                $note = trim($data['technical_note']."\nเหตุผลที่ไม่เห็นชอบ: ".$data['reject_reason']);
+                $record->fill([
+                    'technical_result' => $result,
+                    'technical_note' => $note,
+                    'officer_decision' => 'reject',
+                    'officer_reviewed_by_id' => $request->user()->id,
+                    'high_risk' => false,
+                    'status' => RequestStatus::Rejected,
+                ])->save();
+            } else {
+                $record->fill(['technical_result' => $result]);
+                $next = $this->workflow->destinationAfterReview($record);
+
+                $record->fill([
+                    'technical_result' => $result,
+                    'technical_note' => $data['technical_note'],
+                    'officer_decision' => 'approve',
+                    'officer_reviewed_by_id' => $request->user()->id,
+                    'high_risk' => false,
+                    'workflow_after_pdpa' => null,
+                    'status' => $next,
+                ])->save();
+            }
 
             if ($result->lacksFootage()) {
                 CoverageGap::query()->create([
@@ -120,11 +186,16 @@ class WorkflowController extends Controller
             $this->audit->record($request->user(), 'request.technical_review', [
                 'reference' => $record->reference,
                 'result' => $result->value,
-                'status' => $next->value,
+                'decision' => $decision,
+                'status' => $record->status->value,
             ], $request, $record->getMorphClass(), $record->id);
         });
 
-        return back()->with('status', 'บันทึกผลการตรวจกล้องแล้ว');
+        $message = $data['decision'] === 'reject'
+            ? 'บันทึกว่าไม่เห็นชอบคำขอแล้ว'
+            : 'บันทึกผลตรวจและส่งเรื่องให้ผู้อำนวยการกองพิจารณาแล้ว';
+
+        return back()->with('status', $message);
     }
 
     public function decide(Request $request, int $viewingRequest): RedirectResponse
@@ -132,53 +203,57 @@ class WorkflowController extends Controller
         $record = ViewingRequest::query()->findOrFail($viewingRequest);
         $user = $request->user();
         $data = $request->validate([
-            'decision' => ['required', Rule::in(['approve', 'reject', 'more_info', 'escalate'])],
-            'comment' => ['required', 'string', 'max:2000'],
+            'decision' => ['required', Rule::in(['approve', 'reject', 'escalate'])],
+            'comment' => [
+                Rule::requiredIf(fn () => $request->input('decision') === 'reject'),
+                'nullable',
+                'string',
+                'max:2000',
+            ],
         ]);
 
         $status = $record->status;
-        $allowed = ($status === RequestStatus::PendingDirector && $user->role === UserRole::Director)
-            || ($status === RequestStatus::PendingDean && $user->role === UserRole::AssociateDean);
-        abort_unless($allowed, 403);
-        abort_if($data['decision'] === 'escalate' && $user->role !== UserRole::Director, 403);
+        $isDirector = $status === RequestStatus::PendingDirector && $user->role === UserRole::Director;
+        $isDean = $status === RequestStatus::PendingDean && $user->role === UserRole::AssociateDean;
+        abort_unless($isDirector || $isDean, 403);
+        abort_if($data['decision'] === 'escalate' && ! $isDirector, 403);
 
         $next = match ($data['decision']) {
             'approve' => RequestStatus::Approved,
             'reject' => RequestStatus::Rejected,
-            'more_info' => RequestStatus::MoreInfo,
             'escalate' => RequestStatus::PendingDean,
         };
 
-        $record->update([
+        $comment = filled($data['comment'] ?? null) ? trim($data['comment']) : null;
+
+        $updates = [
             'status' => $next,
-            'resume_status' => $next === RequestStatus::MoreInfo ? $status->value : null,
-            'technical_note' => trim(($record->technical_note ? $record->technical_note."\n" : '').$data['comment']),
-        ]);
+            'resume_status' => null,
+        ];
+
+        if ($isDirector) {
+            $updates['director_note'] = $comment;
+            $updates['director_reviewed_by_id'] = $user->id;
+        } else {
+            $updates['dean_note'] = $comment;
+            $updates['dean_reviewed_by_id'] = $user->id;
+        }
+
+        $record->update($updates);
         $this->audit->record($user, 'request.decided', [
             'reference' => $record->reference,
             'decision' => $data['decision'],
-            'comment' => $data['comment'],
+            'comment' => $comment,
+            'role' => $user->role->value,
         ], $request, $record->getMorphClass(), $record->id);
 
-        return back()->with('status', 'บันทึกคำวินิจฉัยแล้ว');
-    }
+        $flash = match ($data['decision']) {
+            'approve' => 'อนุมัติคำขอแล้ว เจ้าหน้าที่สามารถนัดดูภาพได้',
+            'reject' => 'บันทึกว่าไม่อนุมัติคำขอแล้ว',
+            'escalate' => 'ส่งเรื่องให้รองคณบดีฝ่ายบริหารพิจารณาแล้ว',
+        };
 
-    public function pdpa(Request $request, int $viewingRequest): RedirectResponse
-    {
-        $record = ViewingRequest::query()->findOrFail($viewingRequest);
-        abort_unless($record->status === RequestStatus::PendingPdpa, 403);
-
-        $data = $request->validate(['pdpa_opinion' => ['required', 'string', 'max:2000']]);
-        $next = RequestStatus::from($record->workflow_after_pdpa ?: RequestStatus::Submitted->value);
-        $record->update([
-            'pdpa_opinion' => $data['pdpa_opinion'],
-            'status' => $next,
-        ]);
-        $this->audit->record($request->user(), 'request.pdpa_opinion', [
-            'reference' => $record->reference,
-        ], $request, $record->getMorphClass(), $record->id);
-
-        return back()->with('status', 'บันทึกความเห็นด้านข้อมูลส่วนบุคคลแล้ว');
+        return back()->with('status', $flash);
     }
 
     public function moreInfo(Request $request, int $viewingRequest): RedirectResponse
@@ -255,9 +330,16 @@ class WorkflowController extends Controller
     {
         $record = ViewingRequest::query()->findOrFail($viewingRequest);
         abort_unless(in_array($record->status, [RequestStatus::Viewed, RequestStatus::NoFootage, RequestStatus::Rejected], true), 403);
-        $record->update(['status' => RequestStatus::Closed]);
-        $this->audit->record($request->user(), 'request.closed', ['reference' => $record->reference], $request, $record->getMorphClass(), $record->id);
 
-        return back()->with('status', 'ปิดคำขอแล้ว');
+        $previous = $record->status->value;
+        $record->update(['status' => RequestStatus::Closed]);
+        $this->audit->record($request->user(), 'request.closed', [
+            'reference' => $record->reference,
+            'previous_status' => $previous,
+        ], $request, $record->getMorphClass(), $record->id);
+
+        return redirect()
+            ->route('queue')
+            ->with('status', 'ปิดคำขอ '.$record->reference.' แล้ว');
     }
 }

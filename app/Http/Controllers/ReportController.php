@@ -25,7 +25,7 @@ class ReportController extends Controller
 
         return view('reports.index', [
             'total' => $requests->count(),
-            'pending' => $requests->whereIn('status', [RequestStatus::Submitted, RequestStatus::PendingDirector, RequestStatus::PendingDean, RequestStatus::PendingPdpa, RequestStatus::MoreInfo])->count(),
+            'pending' => $requests->whereIn('status', [RequestStatus::Submitted, RequestStatus::PendingDirector, RequestStatus::PendingDean, RequestStatus::MoreInfo])->count(),
             'approvalRate' => $decided === 0 ? 0 : (int) round(($approved->count() / $decided) * 100),
             'averageDays' => $this->averageDays($closed),
             'gaps' => CoverageGap::query()->latest()->limit(20)->get(),

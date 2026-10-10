@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\OfficerCover;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Support\Impersonation;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class UserRoleController extends Controller
             'users' => User::query()->orderBy('name')->get(),
             'roles' => UserRole::cases(),
             'covers' => OfficerCover::query()->latest()->get(),
+            'impersonationEnabled' => Impersonation::enabled(),
         ]);
     }
 
@@ -32,14 +34,14 @@ class UserRoleController extends Controller
         ]);
 
         $next = UserRole::from($data['role']);
-        if ($user->role === UserRole::SuperAdmin && $next !== UserRole::SuperAdmin) {
+        if ($user->realRole() === UserRole::SuperAdmin && $next !== UserRole::SuperAdmin) {
             $remaining = User::query()->where('role', UserRole::SuperAdmin)->whereKeyNot($user->id)->count();
             if ($remaining === 0) {
                 return back()->with('error', 'ต้องมีผู้ดูแลระบบสูงสุดอย่างน้อยหนึ่งคน');
             }
         }
 
-        $before = $user->role->value;
+        $before = $user->realRole()->value;
         $user->update(['role' => $next]);
         $this->audit->record($request->user(), 'user.role_changed', [
             'email' => $user->email,

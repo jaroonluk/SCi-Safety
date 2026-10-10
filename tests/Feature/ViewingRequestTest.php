@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Building;
 use App\Models\User;
 use App\Models\ViewingRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -10,6 +11,28 @@ use Tests\TestCase;
 class ViewingRequestTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_create_form_loads_buildings_from_catalog(): void
+    {
+        Building::query()->insert([
+            ['rep_build' => 'SC.01', 'rep_room' => '1101'],
+            ['rep_build' => 'SC.01', 'rep_room' => '1201'],
+            ['rep_build' => 'SC.02', 'rep_room' => '2101'],
+        ]);
+
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('requests.create'))
+            ->assertOk()
+            ->assertSee('อาคาร SC.01', false)
+            ->assertSee('อาคาร SC.02', false)
+            ->assertSee('ค้นหาหรือเลือกอาคาร', false)
+            ->assertSee('เพิ่มอาคารใหม่', false)
+            ->assertSee('building-catalog-data', false)
+            ->assertSee('ห้องหรือจุดที่จำได้', false)
+            ->assertSee('ระบุห้องหรือจุดที่จำได้ด้วยตนเอง', false);
+    }
 
     public function test_a_signed_in_user_can_submit_and_track_their_own_request(): void
     {
@@ -31,12 +54,26 @@ class ViewingRequestTest extends TestCase
         $this->actingAs($user)
             ->get(route('requests.index'))
             ->assertOk()
-            ->assertSee($request->reference);
+            ->assertSee($request->reference)
+            ->assertSee('รอเจ้าหน้าที่ตรวจสอบ')
+            ->assertSee('เจ้าหน้าที่กำลังตรวจคำขอ')
+            ->assertSee('อยู่ระหว่างดำเนินการ');
 
         $this->actingAs($user)
             ->get(route('requests.show', $request))
             ->assertOk()
             ->assertSee('รอเจ้าหน้าที่ตรวจสอบ')
+            ->assertSee('ขั้นตอนการขอดูภาพ')
+            ->assertSee('ตอนนี้อยู่ขั้นตอนที่ 2 จาก 5')
+            ->assertSee('ยื่นคำขอ')
+            ->assertSee('เจ้าหน้าที่ตรวจ')
+            ->assertSee('ผู้บริหารพิจารณา')
+            ->assertSee('นัดหมายดูภาพ')
+            ->assertSee('ดูภาพและปิดเรื่อง')
+            ->assertSee('กำลังดำเนินการ')
+            ->assertSee('ข้อมูลที่ท่านกรอก')
+            ->assertSee('เวลา')
+            ->assertSee('น.')
             ->assertSee('ไม่มีการดาวน์โหลดหรือส่งมอบไฟล์ภาพ');
     }
 

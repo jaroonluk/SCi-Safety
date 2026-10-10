@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\AccountType;
 use App\Enums\UserRole;
+use App\Support\Impersonation;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -50,6 +51,29 @@ class User extends Authenticatable
             'role' => UserRole::class,
             'account_type' => AccountType::class,
         ];
+    }
+
+    public function getAttribute($key): mixed
+    {
+        if ($key === 'role') {
+            $preview = Impersonation::actingAsRoleFor($this);
+            if ($preview !== null) {
+                return $preview;
+            }
+        }
+
+        return parent::getAttribute($key);
+    }
+
+    public function realRole(): UserRole
+    {
+        $value = $this->attributes['role'] ?? null;
+
+        if ($value instanceof UserRole) {
+            return $value;
+        }
+
+        return UserRole::from((string) $value);
     }
 
     public function viewingRequests(): HasMany

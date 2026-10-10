@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Models\PrivacyNotice;
 use App\Models\ViewingRequest;
 use App\Services\AuditLogger;
+use App\Support\BuildingCatalog;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,7 @@ class ViewingRequestController extends Controller
             'incidentTypes' => IncidentType::cases(),
             'notice' => PrivacyNotice::current(),
             'onBehalf' => $this->requestUserCanRecordForOthers(),
+            'buildingCatalog' => BuildingCatalog::forForm(),
         ]);
     }
 
@@ -52,12 +54,7 @@ class ViewingRequestController extends Controller
             'landmark' => ['nullable', 'string', 'max:200'],
             'urgency' => ['required', Rule::in(['normal', 'urgent'])],
             'details' => ['required', 'string', 'max:2000'],
-            'external_organization' => ['required_if:incident_type,external', 'nullable', 'string', 'max:160'],
-            'official_letter_no' => ['required_if:incident_type,external', 'nullable', 'string', 'max:80'],
-            'external_contact_name' => ['required_if:incident_type,external', 'nullable', 'string', 'max:160'],
-            'subject_name' => ['required_if:incident_type,exam', 'nullable', 'string', 'max:160'],
-            'subject_code' => ['required_if:incident_type,exam', 'nullable', 'string', 'max:40'],
-            'exam_room' => ['required_if:incident_type,exam', 'nullable', 'string', 'max:80'],
+            'external_contact_name' => ['nullable', 'string', 'max:160'],
             'intake_channel' => [Rule::requiredIf($onBehalf), 'nullable', 'string', 'max:80'],
             'informant_name' => [Rule::requiredIf($onBehalf), 'nullable', 'string', 'max:160'],
             'on_behalf_reason' => [Rule::requiredIf($onBehalf), 'nullable', 'string', 'max:1000'],
@@ -83,12 +80,12 @@ class ViewingRequestController extends Controller
                 'affiliation' => $data['affiliation'] ?? null,
                 'phone' => $data['phone'],
                 'landmark' => $data['landmark'] ?? null,
-                'external_organization' => $data['external_organization'] ?? null,
-                'official_letter_no' => $data['official_letter_no'] ?? null,
+                'external_organization' => null,
+                'official_letter_no' => null,
                 'external_contact_name' => $data['external_contact_name'] ?? null,
-                'subject_name' => $data['subject_name'] ?? null,
-                'subject_code' => $data['subject_code'] ?? null,
-                'exam_room' => $data['exam_room'] ?? null,
+                'subject_name' => null,
+                'subject_code' => null,
+                'exam_room' => null,
                 'on_behalf' => $onBehalf,
                 'intake_channel' => $onBehalf ? $data['intake_channel'] : null,
                 'received_at' => $onBehalf ? now() : null,
@@ -134,6 +131,7 @@ class ViewingRequestController extends Controller
     public function show(Request $request, int $viewingRequest): View
     {
         $record = $this->visibleRequest($request, $viewingRequest);
+        $record->loadMissing(['officerReviewer', 'directorReviewer', 'deanReviewer', 'user']);
 
         return view('requests.show', [
             'viewingRequest' => $record,

@@ -50,12 +50,24 @@ enum IncidentType: string
     public function icon(): string
     {
         return match ($this) {
-            self::LostProperty => 'clipboard',
-            self::Accident => 'help',
+            self::LostProperty => 'bag',
+            self::Accident => 'alert',
             self::Exam => 'document',
             self::External => 'users',
             self::Urgent => 'shield',
-            self::Other => 'route',
+            self::Other => 'spark',
+        };
+    }
+
+    public function tone(): string
+    {
+        return match ($this) {
+            self::LostProperty => 'amber',
+            self::Accident => 'rose',
+            self::Exam => 'blue',
+            self::External => 'teal',
+            self::Urgent => 'red',
+            self::Other => 'slate',
         };
     }
 }

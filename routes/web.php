@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\ImpersonationController;
 use App\Http\Controllers\Admin\UserRoleController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\CameraController;
@@ -60,11 +61,6 @@ Route::middleware('auth')->group(function () {
         Route::post('/privacy', [PrivacyNoticeController::class, 'store'])->name('privacy.store');
     });
 
-    Route::middleware('role:pdpa_coordinator')->group(function () {
-        Route::get('/pdpa', [WorkflowController::class, 'inbox'])->name('pdpa.inbox');
-        Route::post('/requests/{viewingRequest}/pdpa', [WorkflowController::class, 'pdpa'])->name('requests.pdpa');
-    });
-
     Route::middleware('role:super_admin')->group(function () {
         Route::get('/admin/users', [UserRoleController::class, 'index'])->name('admin.users');
         Route::post('/admin/users/{user}/role', [UserRoleController::class, 'update'])->name('admin.users.role');
@@ -72,7 +68,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/admin/audit', [ReportController::class, 'audit'])->name('admin.audit');
         Route::get('/admin/rules', [ReportController::class, 'rules'])->name('admin.rules');
         Route::post('/admin/rules/{rule}', [ReportController::class, 'updateRule'])->name('admin.rules.update');
+        Route::post('/admin/users/{user}/impersonate', [ImpersonationController::class, 'start'])
+            ->name('admin.impersonate');
     });
+
+    // Outside role:super_admin so Super Admin can leave/switch while previewing another role.
+    Route::post('/admin/impersonate/role', [ImpersonationController::class, 'startRole'])
+        ->name('admin.impersonate.role');
+    Route::post('/admin/impersonate/leave', [ImpersonationController::class, 'leave'])
+        ->name('admin.impersonate.leave');
 
     Route::post('/logout', [GoogleAuthController::class, 'logout'])->name('logout');
 });

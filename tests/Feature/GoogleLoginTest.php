@@ -38,8 +38,9 @@ class GoogleLoginTest extends TestCase
             ->assertSee('staff@kku.ac.th')
             ->assertSee('บุคลากร มข.')
             ->assertSee(route('requests.create'), false)
-            ->assertSee(route('appointments.index'), false)
-            ->assertSee(route('requests.index'), false);
+            ->assertSee(route('requests.index'), false)
+            ->assertSee('แจ้งเรื่องที่ต้องการดูภาพ')
+            ->assertDontSee('นัดหมายดูภาพ', false);
     }
 
     public function test_request_pages_require_login(): void

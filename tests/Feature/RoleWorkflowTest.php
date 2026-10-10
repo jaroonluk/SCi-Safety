@@ -31,8 +31,8 @@ class RoleWorkflowTest extends TestCase
         $this->actingAs($requester)->get(route('admin.users'))->assertForbidden();
         $this->actingAs($requester)->get(route('cameras.index'))->assertForbidden();
 
-        $this->actingAs($admin)->get('/')->assertOk()->assertSee('คิวเจ้าหน้าที่');
-        $this->actingAs($admin)->get(route('queue'))->assertOk()->assertSee('คิวเจ้าหน้าที่');
+        $this->actingAs($admin)->get('/')->assertOk()->assertSee('ตรวจสอบคำขอ');
+        $this->actingAs($admin)->get(route('queue'))->assertOk()->assertSee('ตรวจสอบคำขอ');
         $this->actingAs($admin)->get(route('cameras.index'))->assertOk();
         $this->actingAs($admin)->get(route('reviews'))->assertForbidden();
         $this->actingAs($admin)->get(route('admin.users'))->assertForbidden();
@@ -44,9 +44,9 @@ class RoleWorkflowTest extends TestCase
         $this->actingAs($dean)->get(route('reviews'))->assertOk();
         $this->actingAs($dean)->get(route('reports.export'))->assertOk();
 
-        $this->actingAs($pdpa)->get(route('pdpa.inbox'))->assertOk();
         $this->actingAs($pdpa)->get(route('privacy.edit'))->assertOk();
         $this->actingAs($pdpa)->get(route('reviews'))->assertForbidden();
+        $this->actingAs($pdpa)->get(route('queue'))->assertForbidden();
 
         $this->actingAs($super)->get(route('admin.users'))->assertOk()->assertSee('กำหนดสิทธิผู้ใช้งาน');
         $this->actingAs($super)->get(route('admin.rules'))
@@ -65,56 +65,125 @@ class RoleWorkflowTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_general_exam_urgent_and_pdpa_paths(): void
+    public function test_officer_endorsement_goes_to_director_then_optional_dean(): void
     {
         $owner = User::factory()->create();
         $admin = User::factory()->create(['role' => UserRole::CctvAdmin]);
         $director = User::factory()->create(['role' => UserRole::Director]);
         $dean = User::factory()->create(['role' => UserRole::AssociateDean]);
-        $pdpa = User::factory()->create(['role' => UserRole::PdpaCoordinator]);
 
         $general = $this->request($owner);
         $this->actingAs($admin)->post(route('requests.technical', $general), [
             'technical_result' => 'found',
             'technical_note' => 'พบภาพในช่วงเวลาที่แจ้ง',
+            'decision' => 'approve',
+        ])->assertRedirect();
+        $this->assertSame(RequestStatus::PendingDirector, $general->fresh()->status);
+        $this->assertSame('approve', $general->fresh()->officer_decision);
+        $this->assertSame($admin->id, $general->fresh()->officer_reviewed_by_id);
+
+        $this->actingAs($owner)
+            ->get(route('requests.show', $general))
+            ->assertOk()
+            ->assertSee('รอผู้อำนวยการกองพิจารณา')
+            ->assertSee('พบภาพในช่วงเวลาที่แจ้ง')
+            ->assertSee('ผลการพิจารณา · เจ้าหน้าที่ผู้รับผิดชอบคำขอ')
+            ->assertSee($admin->email);
+
+        $this->actingAs($director)
+            ->get(route('requests.show', $general))
+            ->assertOk()
+            ->assertSee('ผลการพิจารณา · เจ้าหน้าที่ผู้รับผิดชอบคำขอ')
+            ->assertSee($admin->email)
+            ->assertSee('พิจารณาคำขอ')
+            ->assertSee('สรุปสำหรับผู้พิจารณา')
+            ->assertDontSee('ข้อมูลที่ท่านกรอก')
+            ->assertDontSee('ขอข้อมูลเพิ่ม');
+
+        $this->actingAs($director)->post(route('requests.decide', $general), [
+            'decision' => 'approve',
+            'comment' => 'อนุมัติให้นัดดูภาพ',
         ])->assertRedirect();
         $this->assertSame(RequestStatus::Approved, $general->fresh()->status);
+        $this->assertSame('อนุมัติให้นัดดูภาพ', $general->fresh()->director_note);
+        $this->assertSame($director->id, $general->fresh()->director_reviewed_by_id);
 
         $exam = $this->request($owner, ['incident_type' => 'exam', 'reference' => 'SCI-EXAM-0001']);
         $this->actingAs($admin)->post(route('requests.technical', $exam), [
             'technical_result' => 'found',
             'technical_note' => 'พบภาพในห้องสอบ',
+            'decision' => 'approve',
         ])->assertRedirect();
         $this->assertSame(RequestStatus::PendingDirector, $exam->fresh()->status);
+
         $this->actingAs($director)->post(route('requests.decide', $exam), [
+            'decision' => 'escalate',
+            'comment' => 'เป็นเรื่องสอบ ส่งรองคณบดีพิจารณา',
+        ])->assertRedirect();
+        $this->assertSame(RequestStatus::PendingDean, $exam->fresh()->status);
+        $this->assertSame('เป็นเรื่องสอบ ส่งรองคณบดีพิจารณา', $exam->fresh()->director_note);
+
+        $this->actingAs($dean)
+            ->get(route('requests.show', $exam))
+            ->assertOk()
+            ->assertSee('พบภาพในห้องสอบ')
+            ->assertSee('เป็นเรื่องสอบ ส่งรองคณบดีพิจารณา')
+            ->assertSee('ผลการพิจารณา · ผู้อำนวยการกอง');
+
+        $this->actingAs($dean)->post(route('requests.decide', $exam), [
             'decision' => 'approve',
-            'comment' => 'เห็นชอบให้นัดดูเฉพาะห้องสอบ',
+            'comment' => 'อนุมัติให้นัดดูภายใต้การควบคุม',
         ])->assertRedirect();
         $this->assertSame(RequestStatus::Approved, $exam->fresh()->status);
+        $this->assertSame('อนุมัติให้นัดดูภายใต้การควบคุม', $exam->fresh()->dean_note);
 
-        $urgent = $this->request($owner, ['reference' => 'SCI-URGENT-0001']);
-        $this->actingAs($admin)->post(route('requests.technical', $urgent), [
-            'technical_result' => 'found',
-            'technical_note' => 'เหตุอันตราย ต้องให้ผู้บริหารสั่งทันที',
-            'send_to_dean' => '1',
+        $rejected = $this->request($owner, ['reference' => 'SCI-REJ-0001']);
+        $this->actingAs($admin)->post(route('requests.technical', $rejected), [
+            'technical_result' => 'unclear',
+            'technical_note' => 'ภาพไม่ชัดพอ',
+            'decision' => 'reject',
+            'reject_reason' => 'ข้อมูลช่วงเวลายังไม่พอและภาพไม่ชัด',
         ])->assertRedirect();
-        $this->assertSame(RequestStatus::PendingDean, $urgent->fresh()->status);
-        $this->actingAs($dean)->post(route('requests.decide', $urgent), [
-            'decision' => 'approve',
-            'comment' => 'ให้นัดดูภาพภายใต้การควบคุม',
-        ])->assertRedirect();
+        $this->assertSame(RequestStatus::Rejected, $rejected->fresh()->status);
+        $this->actingAs($owner)
+            ->get(route('requests.show', $rejected))
+            ->assertOk()
+            ->assertSee('ไม่เห็นชอบ')
+            ->assertSee('ข้อมูลช่วงเวลายังไม่พอและภาพไม่ชัด');
 
         $risk = $this->request($owner, ['reference' => 'SCI-RISK-0001']);
         $this->actingAs($admin)->post(route('requests.technical', $risk), [
             'technical_result' => 'found',
             'technical_note' => 'อาจเห็นบุคคลภายนอกจำนวนมาก',
-            'high_risk' => '1',
+            'decision' => 'approve',
         ])->assertRedirect();
-        $this->assertSame(RequestStatus::PendingPdpa, $risk->fresh()->status);
-        $this->actingAs($pdpa)->post(route('requests.pdpa', $risk), [
-            'pdpa_opinion' => 'ดูได้เฉพาะจุดและเวลาที่เกี่ยวข้อง',
+        $this->assertSame(RequestStatus::PendingDirector, $risk->fresh()->status);
+    }
+
+    public function test_director_rejection_reason_is_visible_to_requester(): void
+    {
+        $owner = User::factory()->create();
+        $admin = User::factory()->create(['role' => UserRole::CctvAdmin]);
+        $director = User::factory()->create(['role' => UserRole::Director]);
+        $record = $this->request($owner, ['reference' => 'SCI-DIR-REJ-0001']);
+
+        $this->actingAs($admin)->post(route('requests.technical', $record), [
+            'technical_result' => 'found',
+            'technical_note' => 'พบภาพ',
+            'decision' => 'approve',
         ])->assertRedirect();
-        $this->assertSame(RequestStatus::Approved, $risk->fresh()->status);
+
+        $this->actingAs($director)->post(route('requests.decide', $record), [
+            'decision' => 'reject',
+            'comment' => 'ยังไม่มีหนังสือจากหน่วยงานภายนอก',
+        ])->assertRedirect();
+
+        $this->assertSame(RequestStatus::Rejected, $record->fresh()->status);
+        $this->actingAs($owner)
+            ->get(route('requests.show', $record))
+            ->assertOk()
+            ->assertSee('ยังไม่มีหนังสือจากหน่วยงานภายนอก')
+            ->assertSee('ผลการพิจารณา · ผู้อำนวยการกอง');
     }
 
     public function test_missing_footage_becomes_a_coverage_gap_and_supervised_viewing_is_logged(): void
@@ -126,6 +195,7 @@ class RoleWorkflowTest extends TestCase
         $this->actingAs($admin)->post(route('requests.technical', $gap), [
             'technical_result' => 'blind_spot',
             'technical_note' => 'บริเวณนี้ไม่มีกล้อง',
+            'decision' => 'approve',
             'gap_priority' => 'high',
         ])->assertRedirect();
 
@@ -142,6 +212,19 @@ class RoleWorkflowTest extends TestCase
             'participants' => 'ผู้ยื่นและเจ้าหน้าที่',
         ])->assertRedirect();
 
+        $ownerShow = $this->actingAs($owner)->get(route('requests.show', $viewing));
+        $ownerShow->assertOk()
+            ->assertSee('นัดดูภาพของคุณ')
+            ->assertSee('มีนัดดูภาพแล้ว — ดูวันเวลาและสถานที่ด้านล่างนี้ก่อน')
+            ->assertSee('ยืนยันว่ามาตามนัดได้')
+            ->assertSee('ห้องควบคุมความปลอดภัย');
+        $html = $ownerShow->getContent();
+        $this->assertLessThan(
+            strpos($html, 'ข้อมูลที่ท่านกรอก'),
+            strpos($html, 'นัดดูภาพของคุณ'),
+            'Appointment spotlight should appear before the submitted-details section for the requester.'
+        );
+
         $this->actingAs($owner)->post(route('requests.confirm', $viewing))->assertRedirect();
         $this->actingAs($admin)->post(route('requests.viewing', $viewing), [
             'viewing_started_at' => now()->subHour()->format('Y-m-d H:i:s'),
@@ -150,6 +233,66 @@ class RoleWorkflowTest extends TestCase
             'controlled' => '1',
         ])->assertRedirect();
         $this->assertSame(RequestStatus::Viewed, $viewing->fresh()->status);
+
+        $this->actingAs($admin)
+            ->post(route('requests.close', $viewing))
+            ->assertRedirect(route('queue'));
+        $this->assertSame(RequestStatus::Closed, $viewing->fresh()->status);
+        $this->assertTrue(
+            AuditLog::query()->where('action', 'request.closed')->where('user_id', $admin->id)->exists()
+        );
+
+        $this->actingAs($admin)->post(route('requests.close', $gap))->assertRedirect(route('queue'));
+        $this->assertSame(RequestStatus::Closed, $gap->fresh()->status);
+    }
+
+    public function test_only_cctv_admin_can_close_terminal_requests(): void
+    {
+        $owner = User::factory()->create();
+        $admin = User::factory()->create(['role' => UserRole::CctvAdmin]);
+        $director = User::factory()->create(['role' => UserRole::Director]);
+        $record = $this->request($owner, [
+            'reference' => 'SCI-CLOSE-0001',
+            'status' => RequestStatus::Rejected,
+        ]);
+
+        $this->actingAs($owner)->post(route('requests.close', $record))->assertForbidden();
+        $this->actingAs($director)->post(route('requests.close', $record))->assertForbidden();
+
+        $this->actingAs($admin)
+            ->get(route('requests.show', $record))
+            ->assertOk()
+            ->assertSee('ปิดคำขอฉบับนี้');
+
+        $this->actingAs($admin)
+            ->get(route('queue'))
+            ->assertOk()
+            ->assertSee('รอปิดคำขอ')
+            ->assertSee('SCI-CLOSE-0001')
+            ->assertSee('ค้างที่เจ้าหน้าที่ · รอปิดคำขอ');
+
+        $waitingDirector = $this->request($owner, [
+            'reference' => 'SCI-WAIT-DIR-0001',
+            'status' => RequestStatus::PendingDirector,
+        ]);
+        $this->actingAs($admin)
+            ->get(route('queue', ['filter' => 'director']))
+            ->assertOk()
+            ->assertSee('SCI-WAIT-DIR-0001')
+            ->assertSee('ค้างที่ผู้อำนวยการกอง');
+
+        $this->actingAs($admin)
+            ->get(route('queue', ['filter' => 'new']))
+            ->assertOk()
+            ->assertDontSee('SCI-WAIT-DIR-0001');
+        $this->assertSame(RequestStatus::PendingDirector, $waitingDirector->fresh()->status);
+
+        $open = $this->request($owner, [
+            'reference' => 'SCI-CLOSE-0002',
+            'status' => RequestStatus::Approved,
+        ]);
+        $this->actingAs($admin)->post(route('requests.close', $open))->assertForbidden();
+        $this->assertSame(RequestStatus::Approved, $open->fresh()->status);
     }
 
     public function test_super_admin_assigns_any_role_and_a_dated_backup(): void
@@ -182,23 +325,58 @@ class RoleWorkflowTest extends TestCase
     public function test_additional_information_returns_to_the_same_reviewer(): void
     {
         $owner = User::factory()->create();
-        $director = User::factory()->create(['role' => UserRole::Director]);
+        $admin = User::factory()->create(['role' => UserRole::CctvAdmin]);
         $request = $this->request($owner, [
             'incident_type' => 'external',
-            'status' => RequestStatus::PendingDirector,
+            'status' => RequestStatus::Submitted,
             'reference' => 'SCI-INFO-0001',
         ]);
 
-        $this->actingAs($director)->post(route('requests.decide', $request), [
-            'decision' => 'more_info',
-            'comment' => 'ขอเลขที่หนังสือ',
+        $this->actingAs($admin)->post(route('requests.more', $request), [
+            'more_info_note' => 'ขอเลขที่หนังสือ',
         ])->assertRedirect();
 
         $this->actingAs($owner)->post(route('requests.supplement', $request), [
             'supplement_note' => 'หนังสือที่ 123',
         ])->assertRedirect();
 
-        $this->assertSame(RequestStatus::PendingDirector, $request->fresh()->status);
+        $this->assertSame(RequestStatus::Submitted, $request->fresh()->status);
+        $this->assertStringContainsString('ขอเลขที่หนังสือ', (string) $request->fresh()->technical_note);
+    }
+
+    public function test_director_may_approve_without_comment_but_must_explain_rejection(): void
+    {
+        $owner = User::factory()->create();
+        $director = User::factory()->create(['role' => UserRole::Director]);
+        $approved = $this->request($owner, [
+            'status' => RequestStatus::PendingDirector,
+            'reference' => 'SCI-DIR-OK',
+            'technical_note' => 'พบภาพ',
+            'officer_decision' => 'approve',
+        ]);
+        $rejected = $this->request($owner, [
+            'status' => RequestStatus::PendingDirector,
+            'reference' => 'SCI-DIR-NO',
+            'technical_note' => 'พบภาพ',
+            'officer_decision' => 'approve',
+        ]);
+
+        $this->actingAs($director)->post(route('requests.decide', $approved), [
+            'decision' => 'approve',
+        ])->assertRedirect();
+        $this->assertSame(RequestStatus::Approved, $approved->fresh()->status);
+        $this->assertNull($approved->fresh()->director_note);
+
+        $this->actingAs($director)->from(route('requests.show', $rejected))->post(route('requests.decide', $rejected), [
+            'decision' => 'reject',
+        ])->assertRedirect(route('requests.show', $rejected))->assertSessionHasErrors('comment');
+
+        $this->actingAs($director)->post(route('requests.decide', $rejected), [
+            'decision' => 'reject',
+            'comment' => 'เอกสารไม่ครบ',
+        ])->assertRedirect();
+        $this->assertSame(RequestStatus::Rejected, $rejected->fresh()->status);
+        $this->assertSame('เอกสารไม่ครบ', $rejected->fresh()->director_note);
     }
 
     public function test_masked_export_and_immutable_audit_log(): void

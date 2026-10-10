@@ -65,7 +65,12 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Asia/Bangkok'),
+
+    /*
+    | Timezone used when showing dates to users (Thailand local time).
+    */
+    'display_timezone' => env('APP_DISPLAY_TIMEZONE', 'Asia/Bangkok'),
 
     /*
     |--------------------------------------------------------------------------
